@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>한 줄 방명록 · Vercel + Supabase 예제</title>
+  <meta name="description" content="이름과 한 줄 인사를 남기면 Vercel 함수가 Supabase에 저장합니다.">
+  <style>
+    :root {
+      --ink: #172033; --muted: #526173; --line: #d6dee7; --bg: #f4f7fa; --card: #ffffff;
+      --brand: #005596; --teal: #0f766e; --warn-bg: #fff7ed; --warn-line: #fdba74; --warn-ink: #9a3412;
+      --ok-bg: #ecfdf5; --ok-ink: #065f46;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink); line-height: 1.6; word-break: keep-all;
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    }
+    header { background: #122b40; color: #fff; padding: 28px 20px 24px; }
+    .wrap { max-width: 760px; margin: 0 auto; }
+    h1 { margin: 0; font-size: clamp(25px, 5vw, 32px); line-height: 1.3; }
+    header p { margin: 8px 0 0; color: #d7e3ec; }
+    main { padding: 24px 20px 40px; }
+    form {
+      display: grid; grid-template-columns: 180px 1fr auto; gap: 12px; align-items: start;
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px;
+    }
+    label { display: block; font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+    input, button { width: 100%; height: 48px; font: inherit; border-radius: 10px; }
+    input { border: 1px solid #9fb3c4; background: #fff; color: var(--ink); padding: 0 12px; }
+    input[aria-invalid="true"] { border-color: #c2410c; }
+    .count { display: block; text-align: right; font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .count.over { color: #c2410c; font-weight: 700; }
+    button { border: 0; background: var(--brand); color: #fff; font-weight: 700; padding: 0 24px; cursor: pointer; margin-top: 26px; }
+    button:disabled { background: #6f8ca6; cursor: progress; }
+    :focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
+    #notice { grid-column: 1 / -1; margin: 0; font-size: 15px; }
+    #notice:empty { display: none; }
+    #notice.ok { color: var(--ok-ink); background: var(--ok-bg); border-radius: 8px; padding: 8px 12px; }
+    #notice.bad { color: var(--warn-ink); background: var(--warn-bg); border-radius: 8px; padding: 8px 12px; }
+    #result { margin-top: 18px; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+    .panel h2 { margin: 0 0 8px; font-size: 20px; line-height: 1.4; }
+    .panel h2, .panel p { overflow-wrap: anywhere; }
+    .list { list-style: none; margin: 8px 0 0; padding: 0; }
+    .list li { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 14px; align-items: baseline; padding: 12px 0; border-top: 1px solid var(--line); }
+    .who { font-weight: 700; color: var(--brand); overflow-wrap: anywhere; max-width: 12em; }
+    .msg { overflow-wrap: anywhere; }
+    .when { font-size: 13px; color: var(--muted); white-space: nowrap; }
+    .loading { display: flex; align-items: center; gap: 12px; color: var(--muted); }
+    .spinner { flex: none; width: 24px; height: 24px; border: 3px solid #cfe0ee; border-top-color: var(--brand); border-radius: 50%; animation: spin .9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+    .empty p { margin: 4px 0; color: var(--muted); }
+    .error { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
+    .error p { margin: 6px 0; }
+    .error .hint { color: #7c2d12; font-size: 15px; }
+    .error .code { font-size: 13px; color: #9a3412; }
+    .retry { width: auto; height: 42px; margin-top: 8px; background: #9a3412; }
+    footer { padding: 0 20px 32px; font-size: 13px; color: var(--muted); }
+    footer a { color: #0b6a8a; }
+    @media (max-width: 560px) {
+      form { grid-template-columns: 1fr; }
+      button { margin-top: 0; }
+      .list li { grid-template-columns: 1fr auto; }
+      .msg { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>한 줄 방명록</h1>
+      <p>이름과 한 줄 인사를 남기면 Vercel 함수가 Supabase에 저장합니다.</p>
+    </div>
+  </header>
+  <main class="wrap">
+    <form id="write" novalidate>
+      <div>
+        <label for="name">이름</label>
+        <input id="name" name="name" autocomplete="nickname" maxlength="40" aria-describedby="name-count" required>
+        <span id="name-count" class="count">0 / 20</span>
+      </div>
+      <div>
+        <label for="message">한 줄 인사</label>
+        <input id="message" name="message" autocomplete="off" maxlength="400" aria-describedby="message-count" required>
+        <span id="message-count" class="count">0 / 200</span>
+      </div>
+      <button id="submit" type="submit">남기기</button>
+      <p id="notice" role="status"></p>
+    </form>
+    <section id="result" aria-live="polite" aria-busy="false"></section>
+  </main>
+  <footer class="wrap">최근 20개만 보여 줍니다 · 남긴 글은 누구나 볼 수 있습니다 · <a href="/">공휴일 조회로</a></footer>
+
+  <script>
+    // 서버(lib/guestbook.js)와 같은 규칙입니다. 화면 검사는 안내용이고, 최종 판단은 서버와 DB가 합니다.
+    const LIMITS = { name: 20, message: 200 };
+    const CONTROL = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/u;
+    const count = (text) => [...text].length; // 이모지도 한 글자로 셉니다
+
+    const form = document.getElementById('write');
+    const fields = { name: document.getElementById('name'), message: document.getElementById('message') };
+    const submitButton = document.getElementById('submit');
+    const notice = document.getElementById('notice');
+    const result = document.getElementById('result');
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text; // 남이 쓴 글을 HTML로 해석하지 않습니다
+      return node;
+    }
+    function formatTime(iso) {
+      return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+        .format(new Date(iso));
+    }
+    function say(text, kind) {
+      notice.textContent = text;
+      notice.className = kind || '';
+    }
+
+    // 글자 수 표시
+    function updateCount(key) {
+      const n = count(fields[key].value.trim());
+      const out = document.getElementById(`${key}-count`);
+      out.textContent = `${n} / ${LIMITS[key]}`;
+      out.classList.toggle('over', n > LIMITS[key]);
+    }
+    for (const key of Object.keys(fields)) {
+      fields[key].addEventListener('input', () => { updateCount(key); fields[key].removeAttribute('aria-invalid'); });
+    }
+
+    function checkLocal() {
+      for (const [key, label] of [['name', '이름'], ['message', '한 줄 인사']]) {
+        const text = fields[key].value.trim();
+        let problem = '';
+        if (!text) problem = `${label}을(를) 입력해 주세요.`;
+        else if (CONTROL.test(text)) problem = `${label}에는 줄바꿈이나 제어 문자를 넣을 수 없습니다.`;
+        else if (count(text) > LIMITS[key]) problem = `${label}은(는) ${LIMITS[key]}자까지 쓸 수 있습니다.`;
+        if (problem) {
+          fields[key].setAttribute('aria-invalid', 'true');
+          fields[key].focus();
+          return problem;
+        }
+      }
+      return '';
+    }
+
+    // 목록의 네 가지 상태: 불러오는 중 · 목록 · 비어 있음 · 오류
+    function showLoading() {
+      const panel = el('div', 'panel loading');
+      panel.append(el('span', 'spinner'), el('span', '', '방명록을 불러오는 중입니다…'));
+      result.replaceChildren(panel);
+    }
+    function showList(items) {
+      const panel = el('div', 'panel');
+      panel.append(el('h2', '', `최근 방명록 ${items.length}개`));
+      const list = el('ul', 'list');
+      for (const item of items) {
+        const li = el('li');
+        const when = el('time', 'when', formatTime(item.created_at));
+        when.dateTime = item.created_at;
+        li.append(el('span', 'who', item.name), el('span', 'msg', item.message), when);
+        list.append(li);
+      }
+      panel.append(list);
+      result.replaceChildren(panel);
+    }
+    function showEmpty() {
+      const panel = el('div', 'panel empty');
+      panel.append(el('h2', '', '아직 남긴 글이 없습니다'), el('p', '', '위 칸에 첫 인사를 남겨 보세요.'));
+      result.replaceChildren(panel);
+    }
+    function showError(message, hint, status) {
+      const panel = el('div', 'panel error');
+      panel.setAttribute('role', 'alert');
+      panel.append(el('h2', '', '방명록을 불러오지 못했습니다'), el('p', '', message));
+      if (hint) panel.append(el('p', 'hint', `확인할 점: ${hint}`));
+      if (status) panel.append(el('p', 'code', `응답 코드 ${status}`));
+      const retry = el('button', 'retry', '다시 시도');
+      retry.type = 'button';
+      retry.addEventListener('click', load);
+      panel.append(retry);
+      result.replaceChildren(panel);
+    }
+    function offlineHint() {
+      return location.protocol === 'file:'
+        ? '이 화면은 함수와 함께 열어야 합니다. 예제 폴더에서 node scripts/dev.mjs 를 실행하고 http://localhost:3000/guestbook.html 로 엽니다.'
+        : '';
+    }
+
+    let controller = null;
+    async function load() {
+      controller?.abort();
+      controller = new AbortController();
+      const { signal } = controller;
+      result.setAttribute('aria-busy', 'true');
+      showLoading();
+      try {
+        const response = await fetch('/api/guestbook', { signal, cache: 'no-store' });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data) showError(data?.error || `서버가 ${response.status} 오류로 답했습니다.`, data?.hint, response.status);
+        else if (data.items.length === 0) showEmpty();
+        else showList(data.items);
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+        showError('서버에 연결하지 못했습니다. 인터넷 연결을 확인하고 다시 시도하세요.', offlineHint(), 0);
+      } finally {
+        if (!signal.aborted) result.setAttribute('aria-busy', 'false');
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const problem = checkLocal();
+      if (problem) return say(problem, 'bad');
+
+      submitButton.disabled = true;
+      say('저장하는 중입니다…');
+      try {
+        const response = await fetch('/api/guestbook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: fields.name.value, message: fields.message.value }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          say(data?.error || `저장하지 못했습니다(응답 코드 ${response.status}).`, 'bad');
+          if (data?.code === 'BAD_NAME') fields.name.setAttribute('aria-invalid', 'true');
+          if (data?.code === 'BAD_MESSAGE') fields.message.setAttribute('aria-invalid', 'true');
+          return;
+        }
+        say('남겼습니다. 고맙습니다!', 'ok');
+        fields.message.value = '';
+        updateCount('message');
+        load();
+      } catch {
+        say(offlineHint() || '서버에 연결하지 못했습니다. 잠시 뒤 다시 시도하세요.', 'bad');
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>

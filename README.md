@@ -22,6 +22,11 @@
 | `scripts/dev.mjs` | 수업용 로컬 시험 서버. 화면과 함수를 한 주소에서 엽니다 |
 | `.vercelignore` | Vercel에 올리지 않을 파일(시험·로컬 도구·설명서) |
 | `.env.example` | 로컬에서 실제 키를 쓸 때 복사해 `.env.local`로 만드는 틀 |
+| `guestbook.html` | 한 줄 방명록 화면. `/api/guestbook`으로 읽고 쓰며 네 가지 상태(불러오는 중·목록·비어 있음·오류)를 보여 줍니다 |
+| `api/guestbook.js` | Vercel 함수. GET 최근 20개(publishable 키), POST 입력 검사 뒤 저장(secret 키) |
+| `lib/guestbook.js` | 방명록 입력 검사(이름 1~20자, 내용 1~200자, 한 줄). 함수와 시험이 함께 씁니다 |
+| `supabase/guestbook.sql` | 방명록 표, RLS(누구나 읽기만), 권한(공개 역할은 select만) |
+| `tests/guestbook.test.mjs` | 입력 검사 경계값과, 잘못된 요청이 DB에 닿기 전에 걸러지는지 확인하는 시험 |
 
 ## 1. 로컬에서 먼저 확인하기 (Node.js가 있을 때)
 
@@ -91,6 +96,14 @@ node scripts/dev.mjs --mock  # 연습 모드 → 브라우저에서 http://local
 | `CACHE_OK` | 데이터가 바뀌는 주기에 맞춘 캐시 시간(실시간 측정값은 짧게, 하루 단위 자료는 길게) |
 | `index.html` | `showList`에서 항목을 그리는 부분 |
 
+## 7. 한 줄 방명록 (Supabase)
+
+1. Supabase SQL Editor에서 `supabase/guestbook.sql`을 한 번 실행합니다.
+2. Vercel Settings → Environment Variables에 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`를 넣고 다시 배포합니다.
+3. `/guestbook.html`을 엽니다. 키가 없으면 함수가 500(`NO_KEY`)과 함께 빠진 변수 이름을 알려 줍니다.
+
+브라우저는 Supabase에 직접 닿지 않고 언제나 함수를 거칩니다. secret 키는 함수 안에서만 쓰고, DB 권한도 select·insert로 좁혀 두었습니다. 도배를 막는 장치(호출 횟수 제한, 캡차)는 없습니다.
+
 ## 공식 문서
 
 - 한국천문연구원 특일 정보: https://www.data.go.kr/data/15012690/openapi.do
@@ -101,3 +114,5 @@ node scripts/dev.mjs --mock  # 연습 모드 → 브라우저에서 http://local
 - Git 연결과 배포: https://vercel.com/docs/git
 - 런타임 로그: https://vercel.com/docs/logs/runtime
 - Hobby 요금제: https://vercel.com/docs/plans/hobby
+- Supabase RLS: https://supabase.com/docs/guides/database/postgres/row-level-security
+- Supabase API 키: https://supabase.com/docs/guides/api/api-keys
